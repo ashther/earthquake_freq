@@ -1,5 +1,5 @@
 ---
-title: "PCTG R Markdown template"
+title: "Does earthquake always happen at night?"
 author: "ashther"
 date: "`r format(Sys.time(), '%d %B %Y')`"
 github: "ashther"
@@ -83,7 +83,7 @@ datatable(
 )
 ```
 
-# Earthquake happend time
+# Earthquake happen time
 
 ------------------------------------------------------------------------
 
@@ -102,11 +102,9 @@ p <- data %>%
 ggplotly(p)
 ```
 
-# Earthquake happend time in different mag
+# Earthquake happen time in different mag
 
 ------------------------------------------------------------------------
-
-The Box-Pierce statistic value is `0.4589`.
 
 ```{r, message=FALSE, warning=FALSE, fig.width=9}
 p <- data %>% 
@@ -120,7 +118,7 @@ p <- data %>%
   count(mag_level, localhour, box_test) %>%
   ggplot(aes(localhour, n)) + 
   geom_col() + 
-  facet_wrap(~ paste(mag_level, box_test, sep = ':'), scales = 'free') + 
+  facet_wrap(~ paste(mag_level, 'box-test p value:', box_test), scales = 'free') + 
   labs(x = 'hour', title = 'earthquake happend hour histogram in different mag', 
        caption = 'dataSource: USGS.gov') + 
   theme_minimal()
@@ -128,7 +126,7 @@ p <- data %>%
 ggplotly(p)
 ```
 
-# Earthquake happend time in China
+# Earthquake happen time in China
 
 ------------------------------------------------------------------------
 
