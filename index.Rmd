@@ -1,0 +1,150 @@
+---
+title: "PCTG R Markdown template"
+author: "ashther"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+github: "ashther"
+output:
+  epuRate::PCTG:
+    toc: TRUE
+    number_sections: FALSE
+    code_folding: "hide"
+---
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# You need these libraries to run this template:
+library(rmarkdown)    # install.packages("rmarkdown") 
+library(epuRate)      # devtools::install_github("holtzy/epuRate", force=TRUE)
+library(dplyr)
+library(purrr)
+library(lutz)
+library(ggplot2)
+library(plotly)
+
+ggthemr::ggthemr('light')
+
+data <- readr::read_csv('d:/query-20230601-20231201.csv') %>% 
+  bind_rows(readr::read_csv('d:/query-20221201-20230601.csv')) %>% 
+  filter(type == 'earthquake') %>% 
+  select(
+    timestamp = time, lat = latitude, long = longitude, 
+    depth, mag, magType, place, 
+  )
+
+data_china <- readr::read_csv('d:/query-china.csv') %>% 
+  filter(type == 'earthquake') %>% 
+  select(
+    timestamp = time, lat = latitude, long = longitude, 
+    depth, mag, magType, place, 
+  )
+
+get_localhour <- compose(lubridate::hour, lubridate::with_tz)
+
+data <- data %>% 
+  # filter(grepl('china', place, ignore.case = TRUE)) %>%
+  transmute(
+    timestamp, mag, tz = tz_lookup_coords(lat, long), 
+    localhour = pmap_int(list(timestamp, tz), get_localhour)
+  )
+
+data_china <- data_china %>% 
+  # filter(grepl('china', place, ignore.case = TRUE)) %>%
+  transmute(
+    timestamp, mag, tz = tz_lookup_coords(lat, long), 
+    localhour = pmap_int(list(timestamp, tz), get_localhour)
+  )
+
+```
+
+# Loading data
+
+------------------------------------------------------------------------
+
+The earthquake data is from [USGS.gov](https://earthquake.usgs.gov/earthquakes/search/). Variables in the dataset and their meanings:
+
+-   time: Time when the event occurred. Times are reported in milliseconds since the epoch ( 1970-01-01T00:00:00.000Z), and do not include leap seconds. In certain output formats, the date is formatted for readability.
+-   latitude: Decimal degrees latitude. Negative values for southern latitudes.
+-   longitude: Decimal degrees longitude. Negative values for western longitudes.
+-   depth: Depth of the event in kilometers.
+-   mag: The magnitude for the event.
+-   magType: The method or algorithm used to calculate the preferred magnitude for the event.
+-   place: Textual description of named geographic region near to the event.
+
+# Show data
+
+------------------------------------------------------------------------
+
+```{r}
+library(DT)
+datatable(
+  data, 
+  rownames = FALSE, 
+  filter = "top", 
+  options = list(pageLength = 10, scrollX = T)
+)
+```
+
+# Earthquake happend time
+
+------------------------------------------------------------------------
+
+The Box-Pierce statistic value is `2.2e-16`.
+
+```{r, message=FALSE, warning=FALSE, fig.width=9}
+p <- data %>% 
+  count(localhour) %>% 
+  ggplot(aes(localhour, n)) + 
+  geom_col() + 
+  labs(x = 'hour', title = 'earthquake happend hour histogram', 
+       subtitle = 'mag level >= 2.5', 
+       caption = 'dataSource: USGS.gov') + 
+  theme_minimal()
+
+ggplotly(p)
+```
+
+# Earthquake happend time in different mag
+
+------------------------------------------------------------------------
+
+The Box-Pierce statistic value is `0.4589`.
+
+```{r, message=FALSE, warning=FALSE, fig.width=9}
+p <- data %>% 
+  mutate(mag_level = case_when(
+    mag >= 4.5 ~ '4.5+', 
+    mag >= 4 ~ '4-4.5', 
+    mag >= 3 ~ '3-4', 
+    .default = '2.5-3'
+  )) %>% 
+  mutate(box_test = Box.test(localhour)$p.value, .by = mag_level) %>% 
+  count(mag_level, localhour, box_test) %>%
+  ggplot(aes(localhour, n)) + 
+  geom_col() + 
+  facet_wrap(~ paste(mag_level, box_test, sep = ':'), scales = 'free') + 
+  labs(x = 'hour', title = 'earthquake happend hour histogram in different mag', 
+       caption = 'dataSource: USGS.gov') + 
+  theme_minimal()
+
+ggplotly(p)
+```
+
+# Earthquake happend time in China
+
+------------------------------------------------------------------------
+
+The Box-Pierce statistic value is `3.527e-07`.
+
+```{r, message=FALSE, warning=FALSE, fig.width=9}
+p <- data_china %>% 
+  count(localhour) %>% 
+  ggplot(aes(localhour, n)) + 
+  geom_col() + 
+  labs(x = 'hour', title = 'earthquake happend hour histogram in China', 
+       subtitle = 'mag level >= 0', 
+       caption = 'dataSource: USGS.gov') + 
+  theme_minimal()
+
+ggplotly(p)
+```
+
+
