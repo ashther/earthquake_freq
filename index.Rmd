@@ -30,27 +30,13 @@ data <- readr::read_csv('d:/query-20230601-20231201.csv') %>%
     depth, mag, magType, place, 
   )
 
-data_china <- readr::read_csv('d:/query-china.csv') %>% 
-  filter(type == 'earthquake') %>% 
-  select(
-    timestamp = time, lat = latitude, long = longitude, 
-    depth, mag, magType, place, 
-  )
-
 get_localhour <- compose(lubridate::hour, lubridate::with_tz)
 
-data <- data %>% 
-  # filter(grepl('china', place, ignore.case = TRUE)) %>%
+temp <- data %>% 
   transmute(
     timestamp, mag, tz = tz_lookup_coords(lat, long), 
-    localhour = pmap_int(list(timestamp, tz), get_localhour)
-  )
-
-data_china <- data_china %>% 
-  # filter(grepl('china', place, ignore.case = TRUE)) %>%
-  transmute(
-    timestamp, mag, tz = tz_lookup_coords(lat, long), 
-    localhour = pmap_int(list(timestamp, tz), get_localhour)
+    localhour = pmap_int(list(timestamp, tz), get_localhour), 
+    is_day = localhour >= 6 & localhour < 18
   )
 
 ```
@@ -73,7 +59,7 @@ The earthquake data is from [USGS.gov](https://earthquake.usgs.gov/earthquakes/s
 
 ------------------------------------------------------------------------
 
-```{r}
+```{r,message=FALSE,warning=FALSE}
 library(DT)
 datatable(
   data, 
@@ -87,62 +73,60 @@ datatable(
 
 ------------------------------------------------------------------------
 
-The Box-Pierce statistic value is `2.2e-16`.
-
 ```{r, message=FALSE, warning=FALSE, fig.width=9}
-p <- data %>% 
-  count(localhour) %>% 
-  ggplot(aes(localhour, n)) + 
-  geom_col() + 
-  labs(x = 'hour', title = 'earthquake happend hour histogram', 
-       subtitle = 'mag level >= 2.5', 
+p1 <- temp %>% 
+  mutate(date = lubridate::floor_date(timestamp, 'weeks'), 
+         is_day = if_else(is_day, '日间', '夜间')) %>% 
+  count(date, is_day) %>% 
+  ggplot(aes(date, n)) + 
+  geom_line(aes(color = is_day)) + 
+  geom_smooth(aes(color = is_day), se = FALSE) + 
+  scale_color_manual(values = c('日间' = '#ffb84d', '夜间' = '#3a6589')) + 
+  labs(x = NULL, y = 'count weekly', title = 'earthquake count on if happened at night', 
+       color = NULL, 
+       subtitle = 'mag level >= 2.5\nruns test p value: 0.7009211', 
        caption = 'dataSource: USGS.gov') + 
-  theme_minimal()
+  theme_minimal() + 
+  theme(legend.position = 'bottom')
 
-ggplotly(p)
+p2 <- temp %>% 
+  filter(mag >= 4.5) %>% 
+  mutate(date = lubridate::floor_date(timestamp, 'weeks'), 
+         is_day = if_else(is_day, '日间', '夜间')) %>% 
+  count(date, is_day) %>% 
+  ggplot(aes(date, n)) + 
+  geom_line(aes(color = is_day)) + 
+  geom_smooth(aes(color = is_day), se = FALSE) + 
+  scale_color_manual(values = c('日间' = '#ffb84d', '夜间' = '#3a6589')) + 
+  labs(x = NULL, y = 'count weekly', title = 'earthquake count on if happened at night', 
+       color = NULL, 
+       subtitle = 'mag level >= 4.5\nruns test p value: 0.6062803', 
+       caption = 'dataSource: USGS.gov') + 
+  theme_minimal() + 
+  theme(legend.position = 'bottom')
+
+cowplot::plot_grid(p1, p2)
 ```
 
-# Earthquake happen time in different mag
+# Wald–Wolfowitz runs test
 
 ------------------------------------------------------------------------
 
-```{r, message=FALSE, warning=FALSE, fig.width=9}
-p <- data %>% 
-  mutate(mag_level = case_when(
-    mag >= 4.5 ~ '4.5+', 
-    mag >= 4 ~ '4-4.5', 
-    mag >= 3 ~ '3-4', 
-    .default = '2.5-3'
-  )) %>% 
-  mutate(box_test = Box.test(localhour)$p.value, .by = mag_level) %>% 
-  count(mag_level, localhour, box_test) %>%
-  ggplot(aes(localhour, n)) + 
-  geom_col() + 
-  facet_wrap(~ paste(mag_level, 'box-test p value:', box_test), scales = 'free') + 
-  labs(x = 'hour', title = 'earthquake happend hour histogram in different mag', 
-       caption = 'dataSource: USGS.gov') + 
-  theme_minimal()
+```{r}
+runs_test <- function(x) {
 
-ggplotly(p)
+  R <- length(rle(x)$length) # observed runs
+  n_1 <- length(x[x == 0])
+  n_2 <- length(x[x == 1])
+  R_ <- (2 * n_1 * n_2) / (n_1 + n_2) + 1 # expected runs
+  s_R <- (2 * n_1 * n_2 * (2 * n_1 * n_2 - n_1 - n_2)) / ( (n_1 + n_2)^2 *   (n_1 + n_2 - 1) )
+  
+  Z <- (R - R_) / s_R # test statitics
+  
+  # H0:  the sequence was produced in a random manner
+  # Ha:  the sequence was not produced in a random manner  
+  
+  p.value <- 2 * pnorm(-abs(Z))
+  p.value
+}
 ```
-
-# Earthquake happen time in China
-
-------------------------------------------------------------------------
-
-The Box-Pierce statistic value is `3.527e-07`.
-
-```{r, message=FALSE, warning=FALSE, fig.width=9}
-p <- data_china %>% 
-  count(localhour) %>% 
-  ggplot(aes(localhour, n)) + 
-  geom_col() + 
-  labs(x = 'hour', title = 'earthquake happend hour histogram in China', 
-       subtitle = 'mag level >= 0', 
-       caption = 'dataSource: USGS.gov') + 
-  theme_minimal()
-
-ggplotly(p)
-```
-
-
